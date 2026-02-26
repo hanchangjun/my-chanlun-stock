@@ -269,6 +269,47 @@ export default function Home() {
                           />
                         </div>
                       </div>
+                      
+                      {/* 买卖点图例 */}
+                      {showBuySellPoints && (
+                        <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
+                          <p className="text-sm font-semibold mb-3">买卖点图例：</p>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-[#ff4444]"></div>
+                              <span>一买（趋势反转）</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-[#ff6666]"></div>
+                              <span>二买（确认买点）</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-[#ff8888]"></div>
+                              <span>三买（突破买点）</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-[#ffaaaa]"></div>
+                              <span>小买（短线机会）</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-[#4444ff]"></div>
+                              <span>一卖（趋势反转）</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-[#6666ff]"></div>
+                              <span>二卖（确认卖点）</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-[#8888ff]"></div>
+                              <span>三卖（跌破卖点）</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full bg-[#aaaaff]"></div>
+                              <span>小卖（短线风险）</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </TabsContent>
                   </Tabs>
                 </CardContent>

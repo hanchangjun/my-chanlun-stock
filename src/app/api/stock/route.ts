@@ -14,37 +14,52 @@ export interface KLineData {
 
 /**
  * 获取股票K线数据
- * 使用新浪财经API免费接口
+ * 注意：当前使用模拟数据，因为免费API不稳定
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const symbol = searchParams.get('symbol') || '000001';
-  const period = searchParams.get('period') || 'daily'; // daily, weekly, monthly
+  const period = searchParams.get('period') || 'daily';
   const count = parseInt(searchParams.get('count') || '500', 10);
 
   try {
-    // 格式化股票代码（A股代码格式：sh.000001 或 sz.000001）
+    // 尝试从真实API获取数据
+    const realData = await fetchRealData(symbol, period, count);
+    if (realData && realData.length > 0) {
+      return NextResponse.json({
+        symbol,
+        period,
+        count: realData.length,
+        data: realData
+      });
+    }
+  } catch (error) {
+    console.log('获取真实数据失败，使用模拟数据:', error);
+  }
+
+  // 使用模拟数据
+  const mockData = generateMockData(symbol, count);
+  return NextResponse.json({
+    symbol,
+    period,
+    count: mockData.length,
+    data: mockData,
+    isMock: true
+  });
+}
+
+/**
+ * 尝试从真实API获取数据
+ */
+async function fetchRealData(symbol: string, period: string, count: number): Promise<KLineData[] | null> {
+  try {
     let formattedSymbol = symbol;
     if (symbol.match(/^\d{6}$/)) {
       const firstChar = symbol[0];
-      if (firstChar === '6') {
-        formattedSymbol = `sh.${symbol}`;
-      } else {
-        formattedSymbol = `sz.${symbol}`;
-      }
+      formattedSymbol = firstChar === '6' ? `sh.${symbol}` : `sz.${symbol}`;
     }
 
-    // 新浪财经K线数据接口
-    const periodMap: Record<string, string> = {
-      daily: 'daily',
-      weekly: 'weekly',
-      monthly: 'monthly'
-    };
-
-    const periodParam = periodMap[period] || 'daily';
-    
-    // 使用新浪财经接口获取K线数据
-    const url = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${formattedSymbol}&scale=${periodParam}&ma=no&datalen=${count}`;
+    const url = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${formattedSymbol}&scale=${period}&ma=no&datalen=${count}`;
     
     const response = await fetch(url, {
       headers: {
@@ -53,66 +68,25 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    if (!response.ok) return null;
 
     const data = await response.text();
+    if (!data || data === 'null' || data.trim() === '') return null;
 
-    // 解析数据（新浪返回的是JavaScript格式的数据）
-    if (!data || data === 'null' || data.trim() === '') {
-      return NextResponse.json(
-        { error: '无法获取股票数据，请检查股票代码' },
-        { status: 404 }
-      );
-    }
-
-    // 使用正则提取JSON数据
     const jsonMatch = data.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      // 如果是原始格式，尝试直接解析
-      const cleanData = data.replace(/[\n\r\t]/g, '').replace(/'/g, '"');
-      const klineData = JSON.parse(cleanData);
-      if (Array.isArray(klineData)) {
-        return NextResponse.json({
-          symbol,
-          data: formatKLineData(klineData)
-        });
-      } else {
-        throw new Error('数据格式错误');
-      }
-    }
+    if (!jsonMatch) return null;
 
     const klineData = JSON.parse(jsonMatch[0]);
-    
-    if (!Array.isArray(klineData)) {
-      throw new Error('数据格式错误');
-    }
-    
-    // 格式化数据
-    const formattedData = formatKLineData(klineData);
+    if (!Array.isArray(klineData) || klineData.length === 0) return null;
 
-    return NextResponse.json({
-      symbol,
-      period,
-      count: formattedData.length,
-      data: formattedData
-    });
-
+    return formatKLineData(klineData);
   } catch (error) {
-    console.error('获取股票数据失败:', error);
-    
-    // 如果API失败，返回模拟数据用于演示
-    return NextResponse.json({
-      symbol,
-      period,
-      data: generateMockData(symbol, count)
-    });
+    return null;
   }
 }
 
 function formatKLineData(rawData: any[]): KLineData[] {
-  return rawData.map((item: any) => ({
+  const formatted = rawData.map((item: any) => ({
     date: item.day,
     open: parseFloat(item.open),
     high: parseFloat(item.high),
@@ -120,21 +94,46 @@ function formatKLineData(rawData: any[]): KLineData[] {
     close: parseFloat(item.close),
     volume: parseFloat(item.volume),
     amount: parseFloat(item.amount) || 0,
-    change: 0, // 需要从前一天计算
+    change: 0,
     changePercent: 0
-  })).reverse(); // 新浪数据是从新到旧，需要反转
+  })).reverse();
+
+  // 计算涨跌幅
+  for (let i = 1; i < formatted.length; i++) {
+    const prev = formatted[i - 1];
+    const curr = formatted[i];
+    curr.change = curr.close - prev.close;
+    curr.changePercent = (curr.change / prev.close) * 100;
+  }
+
+  return formatted;
 }
 
 /**
- * 生成模拟数据用于演示
+ * 生成真实的模拟数据
+ * 基于真实股票的价格波动模式
  */
 function generateMockData(symbol: string, count: number): KLineData[] {
   const data: KLineData[] = [];
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - count);
 
-  let basePrice = symbol.startsWith('6') ? 10.5 : 15.8;
+  // 根据不同股票设置不同的基础价格和波动特征
+  const stockProfiles: Record<string, { basePrice: number; volatility: number; trend: number }> = {
+    '000001': { basePrice: 15.5, volatility: 0.03, trend: 0.001 },  // 平安银行
+    '000002': { basePrice: 22.8, volatility: 0.035, trend: 0.0005 }, // 万科A
+    '600036': { basePrice: 38.5, volatility: 0.025, trend: 0.0015 }, // 招商银行
+    '600519': { basePrice: 1680, volatility: 0.02, trend: 0.002 },    // 贵州茅台
+    '000858': { basePrice: 158, volatility: 0.028, trend: 0.001 },   // 五粮液
+    '601318': { basePrice: 45.5, volatility: 0.03, trend: 0.001 }     // 中国平安
+  };
+
+  const profile = stockProfiles[symbol] || { basePrice: 20, volatility: 0.03, trend: 0.001 };
   
+  let currentPrice = profile.basePrice;
+  const trendCycle = 60; // 趋势周期天数
+  let cyclePosition = Math.random() * trendCycle;
+
   for (let i = 0; i < count; i++) {
     const date = new Date(startDate);
     date.setDate(date.getDate() + i);
@@ -144,13 +143,27 @@ function generateMockData(symbol: string, count: number): KLineData[] {
       continue;
     }
 
-    const changePercent = (Math.random() - 0.5) * 0.08; // -4% 到 +4%
-    const open = basePrice;
-    const change = basePrice * changePercent;
-    const close = basePrice + change;
-    const high = Math.max(open, close) * (1 + Math.random() * 0.02);
-    const low = Math.min(open, close) * (1 - Math.random() * 0.02);
-    const volume = Math.floor(1000000 + Math.random() * 9000000);
+    // 生成价格波动（结合趋势、周期波动和随机波动）
+    cyclePosition += 1;
+    const cyclePhase = (cyclePosition % trendCycle) / trendCycle;
+    const trendFactor = Math.sin(cyclePhase * Math.PI * 2) * 0.5 + profile.trend;
+    const randomFactor = (Math.random() - 0.5) * profile.volatility * 2;
+    
+    const changePercent = trendFactor + randomFactor;
+    const change = currentPrice * changePercent;
+    
+    const open = currentPrice;
+    const close = currentPrice + change;
+    
+    // 生成合理的最高价和最低价
+    const intradayVolatility = Math.random() * 0.015 + 0.005; // 0.5%-2%的日内波动
+    const high = Math.max(open, close) * (1 + intradayVolatility);
+    const low = Math.min(open, close) * (1 - intradayVolatility);
+    
+    // 生成成交量（与波动相关）
+    const baseVolume = 5000000;
+    const volumeMultiplier = 1 + Math.abs(changePercent) * 10;
+    const volume = Math.floor(baseVolume * volumeMultiplier * (0.5 + Math.random()));
     
     data.push({
       date: date.toISOString().split('T')[0],
@@ -164,7 +177,18 @@ function generateMockData(symbol: string, count: number): KLineData[] {
       changePercent: parseFloat((changePercent * 100).toFixed(2))
     });
 
-    basePrice = close;
+    currentPrice = close;
+    
+    // 确保价格为正
+    if (currentPrice <= 0) {
+      currentPrice = profile.basePrice;
+    }
+  }
+
+  // 计算涨跌幅
+  for (let i = 1; i < data.length; i++) {
+    data[i].change = data[i].close - data[i - 1].close;
+    data[i].changePercent = (data[i].change / data[i - 1].close) * 100;
   }
 
   return data;

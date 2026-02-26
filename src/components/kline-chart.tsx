@@ -96,22 +96,26 @@ export function KLineChart({
     
     const isBuy = point.type.includes('buy');
     const color = getBuySellColor(point.type);
+    const label = getBuySellLabel(point.type);
     
     return [{
       name: point.description,
       coord: [point.index, point.price],
-      value: isBuy ? '买' : '卖',
-      symbolSize: point.strength * 3,
+      value: label,
+      symbolSize: point.strength * 4,
       itemStyle: {
-        color: color
+        color: color,
+        borderColor: '#fff',
+        borderWidth: 2
       },
       label: {
         show: true,
         position: isBuy ? 'bottom' : 'top',
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: 'bold',
         color: color,
-        formatter: isBuy ? `买${point.strength}` : `卖${point.strength}`
+        formatter: label,
+        offset: [0, isBuy ? 15 : -15]
       }
     }];
   }) || [];
@@ -141,13 +145,16 @@ export function KLineChart({
 
   // 中枢标注
   const zhongshuAnnotations = analysis?.zhongshuList.filter(() => showZhongShu).flatMap((zs, idx) => {
-    const startIndex = analysis.duanList.findIndex(d => 
-      d.startDate === zs.startDate && d.endDate === zs.endDate
-    );
-    const startIdx = startIndex >= 0 ? analysis.duanList[startIndex].startIndex : 0;
-    const endIdx = startIndex >= 0 && startIndex < analysis.duanList.length - 1 
-      ? analysis.duanList[startIndex + zs.duanList.length - 1].endIndex 
-      : data.length - 1;
+    if (!zs.duanList || zs.duanList.length === 0) return [];
+    
+    // 使用中枢中包含的第一个和最后一个线段来确定索引范围
+    const firstDuan = zs.duanList[0];
+    const lastDuan = zs.duanList[zs.duanList.length - 1];
+    
+    const startIdx = firstDuan.startIndex;
+    const endIdx = Math.min(lastDuan.endIndex, data.length - 1);
+    
+    if (startIdx >= endIdx) return [];
     
     return [
       {
@@ -420,5 +427,29 @@ function getBuySellColor(type: BuySellType): string {
       return '#aaaaff';
     default:
       return '#000000';
+  }
+}
+
+// 获取买卖点标签
+function getBuySellLabel(type: BuySellType): string {
+  switch (type) {
+    case BuySellType.FirstBuy:
+      return '一买';
+    case BuySellType.SecondBuy:
+      return '二买';
+    case BuySellType.ThirdBuy:
+      return '三买';
+    case BuySellType.SmallLevelBuy:
+      return '小买';
+    case BuySellType.FirstSell:
+      return '一卖';
+    case BuySellType.SecondSell:
+      return '二卖';
+    case BuySellType.ThirdSell:
+      return '三卖';
+    case BuySellType.SmallLevelSell:
+      return '小卖';
+    default:
+      return '未知';
   }
 }
