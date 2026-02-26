@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 import { KLineData, ChanLunAnalysis, FractalType, BiDirection, BuySellType } from '@/lib/chanlun';
@@ -25,12 +25,14 @@ export function KLineChart({
   showBuySellPoints = true
 }: KLineChartProps) {
   const chartRef = useRef<ReactECharts>(null);
+  const [isReady, setIsReady] = useState(false);
 
-  // 计算涨跌颜色
-  const getColor = (i: number) => {
-    if (i === 0) return '#ec5e5e';
-    return data[i].close >= data[i - 1].close ? '#f54949' : '#1dbf7a';
-  };
+  // 确保数据加载完成后再渲染图表
+  useEffect(() => {
+    if (data && data.length > 0) {
+      setIsReady(true);
+    }
+  }, [data]);
 
   // 准备K线数据
   const klineData = data.map((item, index) => [
@@ -147,7 +149,6 @@ export function KLineChart({
   const zhongshuAnnotations = analysis?.zhongshuList.filter(() => showZhongShu).flatMap((zs, idx) => {
     if (!zs.duanList || zs.duanList.length === 0) return [];
     
-    // 使用中枢中包含的第一个和最后一个线段来确定索引范围
     const firstDuan = zs.duanList[0];
     const lastDuan = zs.duanList[zs.duanList.length - 1];
     
@@ -214,6 +215,7 @@ export function KLineChart({
   }) || [];
 
   const option = {
+    animation: false, // 禁用动画以避免失真
     tooltip: {
       trigger: 'axis',
       axisPointer: {
@@ -394,13 +396,23 @@ export function KLineChart({
     graphic: [...duanAnnotations, ...zhongshuAnnotations]
   };
 
+  if (!isReady) {
+    return (
+      <div className="w-full h-[600px] flex items-center justify-center bg-slate-50 dark:bg-slate-800 rounded-lg">
+        <div className="text-slate-500">加载图表数据中...</div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full h-full">
+    <div className="w-full min-h-[600px]">
       <ReactECharts
         ref={chartRef}
         option={option}
-        style={{ height: '600px' }}
+        style={{ height: '600px', width: '100%' }}
         opts={{ renderer: 'canvas' }}
+        notMerge={true}
+        lazyUpdate={true}
       />
     </div>
   );
