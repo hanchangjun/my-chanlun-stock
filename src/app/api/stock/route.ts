@@ -119,20 +119,21 @@ function generateMockData(symbol: string, count: number): KLineData[] {
   startDate.setDate(startDate.getDate() - count);
 
   // 根据不同股票设置不同的基础价格和波动特征
-  const stockProfiles: Record<string, { basePrice: number; volatility: number; trend: number }> = {
-    '000001': { basePrice: 15.5, volatility: 0.03, trend: 0.001 },  // 平安银行
-    '000002': { basePrice: 22.8, volatility: 0.035, trend: 0.0005 }, // 万科A
-    '600036': { basePrice: 38.5, volatility: 0.025, trend: 0.0015 }, // 招商银行
-    '600519': { basePrice: 1680, volatility: 0.02, trend: 0.002 },    // 贵州茅台
-    '000858': { basePrice: 158, volatility: 0.028, trend: 0.001 },   // 五粮液
-    '601318': { basePrice: 45.5, volatility: 0.03, trend: 0.001 }     // 中国平安
+  const stockProfiles: Record<string, { basePrice: number; priceRange: [number, number]; volatility: number; trend: number }> = {
+    '000001': { basePrice: 15.5, priceRange: [11.0, 20.0], volatility: 0.03, trend: 0.0002 },  // 平安银行
+    '000002': { basePrice: 22.8, priceRange: [17.0, 29.0], volatility: 0.032, trend: 0.0001 }, // 万科A
+    '600036': { basePrice: 38.5, priceRange: [30.0, 47.0], volatility: 0.028, trend: 0.0003 }, // 招商银行
+    '600519': { basePrice: 1680, priceRange: [1450, 1950], volatility: 0.025, trend: 0.0004 },    // 贵州茅台
+    '000858': { basePrice: 158, priceRange: [135, 185], volatility: 0.03, trend: 0.0002 },   // 五粮液
+    '601318': { basePrice: 45.5, priceRange: [35.0, 58.0], volatility: 0.03, trend: 0.0002 }     // 中国平安
   };
 
-  const profile = stockProfiles[symbol] || { basePrice: 20, volatility: 0.03, trend: 0.001 };
+  const profile = stockProfiles[symbol] || { basePrice: 20, priceRange: [14, 26], volatility: 0.03, trend: 0.0002 };
   
   let currentPrice = profile.basePrice;
   const trendCycle = 60; // 趋势周期天数
   let cyclePosition = Math.random() * trendCycle;
+  const [minPrice, maxPrice] = profile.priceRange;
 
   for (let i = 0; i < count; i++) {
     const date = new Date(startDate);
@@ -143,46 +144,59 @@ function generateMockData(symbol: string, count: number): KLineData[] {
       continue;
     }
 
-    // 生成价格波动（结合趋势、周期波动和随机波动）
+    // 生成价格波动
     cyclePosition += 1;
     const cyclePhase = (cyclePosition % trendCycle) / trendCycle;
-    const trendFactor = Math.sin(cyclePhase * Math.PI * 2) * 0.5 + profile.trend;
+    
+    // 趋势因子：使用更小的幅度，避免价格偏离过大
+    const trendFactor = Math.sin(cyclePhase * Math.PI * 2) * 0.02 + profile.trend;
+    
+    // 随机因子：控制日内波动在合理范围
     const randomFactor = (Math.random() - 0.5) * profile.volatility * 2;
     
-    const changePercent = trendFactor + randomFactor;
-    const change = currentPrice * changePercent;
+    // 回归因子：让价格倾向于回归到基础价格（减弱回归力度）
+    const regressionFactor = (profile.basePrice - currentPrice) / profile.basePrice * 0.0025;
+    
+    // 综合变化率
+    const changePercent = trendFactor + randomFactor + regressionFactor;
+    
+    // 限制单日最大涨跌幅为±10%
+    const clampedChangePercent = Math.max(-0.1, Math.min(0.1, changePercent));
+    
+    const change = currentPrice * clampedChangePercent;
     
     const open = currentPrice;
     const close = currentPrice + change;
     
-    // 生成合理的最高价和最低价
-    const intradayVolatility = Math.random() * 0.015 + 0.005; // 0.5%-2%的日内波动
+    // 生成合理的最高价和最低价（增加日内波动）
+    const intradayVolatility = Math.random() * 0.015 + 0.005; // 0.5%-2.0%的日内波动
     const high = Math.max(open, close) * (1 + intradayVolatility);
     const low = Math.min(open, close) * (1 - intradayVolatility);
     
+    // 确保价格在合理范围内
+    const finalHigh = Math.min(Math.max(high, minPrice), maxPrice);
+    const finalLow = Math.min(Math.max(low, minPrice), maxPrice);
+    const finalClose = Math.min(Math.max(close, minPrice), maxPrice);
+    const finalOpen = Math.min(Math.max(open, minPrice), maxPrice);
+    
     // 生成成交量（与波动相关）
     const baseVolume = 5000000;
-    const volumeMultiplier = 1 + Math.abs(changePercent) * 10;
-    const volume = Math.floor(baseVolume * volumeMultiplier * (0.5 + Math.random()));
+    const volumeMultiplier = 1 + Math.abs(clampedChangePercent) * 15;
+    const volume = Math.floor(baseVolume * volumeMultiplier * (0.7 + Math.random() * 0.6));
     
     data.push({
       date: date.toISOString().split('T')[0],
-      open: parseFloat(open.toFixed(2)),
-      high: parseFloat(high.toFixed(2)),
-      low: parseFloat(low.toFixed(2)),
-      close: parseFloat(close.toFixed(2)),
+      open: parseFloat(finalOpen.toFixed(2)),
+      high: parseFloat(finalHigh.toFixed(2)),
+      low: parseFloat(finalLow.toFixed(2)),
+      close: parseFloat(finalClose.toFixed(2)),
       volume,
-      amount: volume * (open + close) / 2,
+      amount: volume * (finalOpen + finalClose) / 2,
       change: parseFloat(change.toFixed(2)),
-      changePercent: parseFloat((changePercent * 100).toFixed(2))
+      changePercent: parseFloat((clampedChangePercent * 100).toFixed(2))
     });
 
-    currentPrice = close;
-    
-    // 确保价格为正
-    if (currentPrice <= 0) {
-      currentPrice = profile.basePrice;
-    }
+    currentPrice = finalClose;
   }
 
   // 计算涨跌幅
